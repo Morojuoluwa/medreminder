@@ -18,6 +18,8 @@ import Svg, { Circle } from "react-native-svg";
 
 
 import { useFocusEffect } from "@react-navigation/native";
+import { getMedications, getTodaysDoses, recordDose } from "@/utils/storage";
+import { registerForPushNotificationsAsync, scheduleMedicationReminder } from "@/utils/notifications";
 
 
 const { width } = Dimensions.get("window");
@@ -122,120 +124,138 @@ function CircularProgress({
   );
 }
 
+interface Medication {
+  id: string;
+  name: string;
+  startDate: string;
+  duration: string;
+  dosage: string;
+  times: string[];
+  color: string;
+  reminderEnabled: boolean;
+}
+
+interface DoseHistory {
+  id: string;
+  medicationId: string;
+  taken: boolean;
+  timestamp: string;
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [medications, setMedications] = useState([]);
-  const [todaysMedications, setTodaysMedications] = useState([]);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [todaysMedications, setTodaysMedications] = useState<Medication[]>([]);
   const [completedDoses, setCompletedDoses] = useState(0);
-  const [doseHistory, setDoseHistory] = useState([]);
+  const [doseHistory, setDoseHistory] = useState<DoseHistory[]>([]);
 
-//   const loadMedications = useCallback(async () => {
-//     try {
-//       const [allMedications, todaysDoses] = await Promise.all([
-//         getMedications(),
-//         getTodaysDoses(),
-//       ]);
+  const loadMedications = useCallback(async () => {
+    try {
+      const [allMedications, todaysDoses] = await Promise.all([
+        getMedications(),
+        getTodaysDoses(),
+      ]);
 
-//       setDoseHistory(todaysDoses);
-//       setMedications(allMedications);
+      setDoseHistory(todaysDoses);
+      setMedications(allMedications);
 
-//       // Filter medications for today
-//       const today = new Date();
-//       const todayMeds = allMedications.filter((med) => {
-//         const startDate = new Date(med.startDate);
-//         const durationDays = parseInt(med.duration.split(" ")[0]);
+      // Filter medications for today
+      const today = new Date();
+      const todayMeds = allMedications.filter((med) => {
+        const startDate = new Date(med.startDate);
+        const durationDays = parseInt(med.duration.split(" ")[0]);
 
-//         // For ongoing medications or if within duration
-//         if (
-//           durationDays === -1 ||
-//           (today >= startDate &&
-//             today <=
-//               new Date(
-//                 startDate.getTime() + durationDays * 24 * 60 * 60 * 1000
-//               ))
-//         ) {
-//           return true;
-//         }
-//         return false;
-//       });
+        // For ongoing medications or if within duration
+        if (
+          durationDays === -1 ||
+          (today >= startDate &&
+            today <=
+              new Date(
+                startDate.getTime() + durationDays * 24 * 60 * 60 * 1000
+              ))
+        ) {
+          return true;
+        }
+        return false;
+      });
 
-//       setTodaysMedications(todayMeds);
+      setTodaysMedications(todayMeds);
 
-//       // Calculate completed doses
-//       const completed = todaysDoses.filter((dose) => dose.taken).length;
-//       setCompletedDoses(completed);
-//     } catch (error) {
-//       console.error("Error loading medications:", error);
-//     }
-//   }, []);
+      // Calculate completed doses
+      const completed = todaysDoses.filter((dose) => dose.taken).length;
+      setCompletedDoses(completed);
+    } catch (error) {
+      console.error("Error loading medications:", error);
+    }
+  }, []);
 
-//   const setupNotifications = async () => {
-//     try {
-//       const token = await registerForPushNotificationsAsync();
-//       if (!token) {
-//         console.log("Failed to get push notification token");
-//         return;
-//       }
+  const setupNotifications = async () => {
+    try {
+      const token = await registerForPushNotificationsAsync();
+      if (!token) {
+        console.log("Failed to get push notification token");
+        return;
+      }
 
-//       // Schedule reminders for all medications
-//       const medications = await getMedications();
-//       for (const medication of medications) {
-//         if (medication.reminderEnabled) {
-//           await scheduleMedicationReminder(medication);
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error setting up notifications:", error);
-//     }
-//   };
+      // Schedule reminders for all medications
+      const medications = await getMedications();
+      for (const medication of medications) {
+        if (medication.reminderEnabled) {
+          await scheduleMedicationReminder(medication);
+        }
+      }
+    } catch (error) {
+      console.error("Error setting up notifications:", error);
+    }
+  };
 
   // Use useEffect for initial load
-//   useEffect(() => {
-//     loadMedications();
-//     setupNotifications();
+  useEffect(() => {
+    loadMedications();
+    setupNotifications();
 
-//     // Handle app state changes for notifications
-//     const subscription = AppState.addEventListener("change", (nextAppState) => {
-//       if (nextAppState === "active") {
-//         loadMedications();
-//       }
-//     });
+    // Handle app state changes for notifications
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "active") {
+        loadMedications();
+      }
+    });
 
-//     return () => {
-//       subscription.remove();
-//     };
-//   }, []);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   // Use useFocusEffect for subsequent updates
   
   
-//   useFocusEffect(
-//     useCallback(() => {
-//       const unsubscribe = () => {
-//         // Cleanup if needed
-//       };
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribe = () => {
+        // Cleanup if needed
+      };
 
-//       loadMedications();
-//       return () => unsubscribe();
-//     }, [loadMedications])
-//   );
+      loadMedications();
+      return () => unsubscribe();
+    }, [loadMedications])
+  );
 
-//   const handleTakeDose = async (medication: Medication) => {
-//     try {
-//       await recordDose(medication.id, true, new Date().toISOString());
-//       await loadMedications(); // Reload data after recording dose
-//     } catch (error) {
-//       console.error("Error recording dose:", error);
-//       Alert.alert("Error", "Failed to record dose. Please try again.");
-//     }
-//   };
+  const handleTakeDose = async (medication: Medication) => {
+    try {
+      await recordDose(medication.id, true, new Date().toISOString());
+      await loadMedications(); // Reload data after recording dose
+    } catch (error) {
+      console.error("Error recording dose:", error);
+      Alert.alert("Error", "Failed to record dose. Please try again.");
+    }
+  };
 
-//   const isDoseTaken = (medicationId: string) => {
-//     return doseHistory.some(
-//       (dose) => dose.medicationId === medicationId && dose.taken
-//     );
-//   };
+  const isDoseTaken = (medicationId: string) => {
+    return doseHistory.some(
+      (dose) => dose.medicationId === medicationId && dose.taken
+    );
+  };
 
   const progress =
     todaysMedications.length > 0
@@ -321,7 +341,7 @@ export default function HomeScreen() {
             </View>
           ) : (
             todaysMedications.map((medication) => {
-            //   const taken = isDoseTaken(medication.id);
+              const taken = isDoseTaken(medication.id);
               return (
                 <View key={medication.id} style={styles.doseCard}>
                   <View
@@ -361,7 +381,7 @@ export default function HomeScreen() {
                         styles.takeDoseButton,
                         { backgroundColor: medication.color },
                       ]}
-                    //   onPress={() => handleTakeDose(medication)}
+                      onPress={() => handleTakeDose(medication)}
                     >
                       <Text style={styles.takeDoseText}>Take</Text>
                     </TouchableOpacity>
